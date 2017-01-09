@@ -1,0 +1,347 @@
+SET PATH=%PATH%;%systemroot%\system32\;%systemroot%\system32\inetsrv\;C:\Program Files\7-Zip;
+SET "MODE=%1"      REM Values = ADD, DELETE
+SET "VIRTUALDIRECTORY=%2"  REM VIRTUALDIRECTORY=CreditPath
+SET "APPNAME=%3"    REM APPNAME=ExpressOS
+SET "SOURCEPATH=%4"    REM SOURCEPATH=C:\8.0\Code
+SET "SOURCECONFIGPATH=%5"  REM SOURCECONFIGPATH=C:\8.0\Deployment\New\TEMPDEPLOY\WebServices\
+SET "DESTINATIONROOTPATH=%6" REM DESTINATIONROOTPATH=C:\WebServices\
+SET "APPPOOLNAME=%7"   REM APPPOOLNAME=CreditPathWS
+SET "PREFIX=%8"     REM PREFIX=Demo1
+SET "POSTFIX=%9"    REM POSTFIX=XOS
+SET "DESTINATIONFULLPATH=%DESTINATIONROOTPATH%%APPNAME%\"
+
+ECHO "*************************************************************************************"
+ECHO "%MODE% %APPNAME%"
+ECHO "*************************************************************************************"
+IF "%MODE%"=="ADDWEBSITE" GOTO :AddWebsite
+IF "%MODE%"=="DELETEWEBSITE" GOTO :DeleteWebsite
+IF "%MODE%"=="ADDAPPPOOL" GOTO :AddAppPool
+IF "%MODE%"=="DELETEAPPPOOL" (
+ GOTO :DeleteAppPool
+) ELSE (
+ GOTO :END
+)
+
+:AddWebsite
+If not exist "%DESTINATIONFULLPATH%" mkdir "%DESTINATIONFULLPATH%"
+7z.exe x "%SOURCEPATH%%APPNAME%*.zip" -o%DESTINATIONROOTPATH% -aoa
+appCmd add app /site.name:"Default Web Site" /path:"/%VIRTUALDIRECTORY%" /physicalPath:%DESTINATIONFULLPATH% /applicationPool:"%APPPOOLNAME%"
+ECHO "Enable SSL certificate for ConnectAPI.APIService"
+appcmd set config "Default Web Site"/"%VIRTUALDIRECTORYPREFIX%ConnectAPI.APIService" /section:access  /sslFlags:Ssl   /commit:APPHOST
+ECHO "Enable SSL certificate for ConnectAPI.Discovery"
+appcmd set config "Default Web Site"/"%VIRTUALDIRECTORYPREFIX%ConnectAPI.Discovery" /section:access  /sslFlags:Ssl   /commit:APPHOST
+
+ECHO "Enable SSL certificate for DocProcessing.GenerationService"
+appcmd set config "Default Web Site"/"%VIRTUALDIRECTORYPREFIX%DocProcessing.GenerationService" /section:access  /sslFlags:Ssl   /commit:APPHOST
+ECHO "Copying %SOURCECONFIGPATH%%APPNAME%\web.config to %DESTINATIONFULLPATH%"
+copy %SOURCECONFIGPATH%%APPNAME%\web.config %DESTINATIONFULLPATH%
+GOTO :END
+
+:DeleteWebsite
+appcmd delete app /app.name:"Default Web Site"/"%VIRTUALDIRECTORY%"
+if exist "%DESTINATIONFULLPATH%" rmdir "%DESTINATIONFULLPATH%" /S /Q
+GOTO :END
+
+:AddAppPool
+appcmd add apppool /name:%APPPOOLNAME% /managedRuntimeVersion:v4.0 /enable32BitAppOnWin64:true
+GOTO :END
+
+:DeleteAppPool
+appcmd delete apppool /apppool.name:%APPPOOLNAME%
+GOTO :END
+ 
+:END
+SET PATH=%PATH%;%systemroot%\system32\;%systemroot%\system32\inetsrv\;C:\Program Files\7-Zip;C:\Windows\Microsoft.NET\Framework64\v4.0.30319;
+SET "MODE=%1"      REM Values = ADD, DELETE
+SET "APPNAME=%2"    REM APPNAME=HMDAWindowsService
+SET "SOURCEPATH=%3"    REM SOURCEPATH=C:\8.0\
+SET "DESTINATIONROOTPATH=%4"                 REM DESTINATIONROOTPATH=C:\WindowsServices\
+SET "EXENAME=%5"
+SET "WindowsServicesSuffix=%6"   REM [Optional] PREFIX=QACreditPathMain.  -Can enter empty string
+SET "WindowsServicesFolder=%7"   REM [Optional] POSTFIX=XOS   -Can enter empty string
+SET "DESTINATIONFULLPATH=%DESTINATIONROOTPATH%%APPNAME%\"
+SET "STARS=*************************************************************************************"
+ECHO %STARS%
+ECHO %STARS%
+ECHO %MODE% %APPNAME%
+ECHO %STARS%
+ECHO %STARS%
+ECHO.
+IF "%MODE%"=="ADD" GOTO :ADD
+IF "%MODE%"=="DELETE" GOTO :DELETE
+IF "%MODE%"=="START" GOTO :START
+IF "%MODE%"=="STOP" (
+ GOTO :STOP
+) ELSE (
+ GOTO :END
+)
+:ADD
+ECHO.
+ECHO ">>> Adding: %APPNAME%%WindowsServicesSuffix%"
+
+if not exist "%DESTINATIONFULLPATH%" mkdir "%DESTINATIONFULLPATH%" /S
+
+7z.exe x "%SOURCEPATH%%APPNAME%*.zip" -o%DESTINATIONROOTPATH% -aoa
+ 
+IF "%APPNAME%"=="XosSTMQueueMonitor" (
+  copy %SOURCECONFIGPATH%StmQueueMonitor\StmQueueMonitor.exe.config %DESTINATIONFULLPATH%
+) ELSE (
+  copy %SOURCECONFIGPATH%%APPNAME%\%APPNAME%.exe.config %DESTINATIONFULLPATH%
+)
+@c:
+@cd\
+@cd C:\WindowsServices\%WindowsServicesFolder%
+@cd %APPNAME%
+ 
+
+IF "%APPNAME%"=="XosSTMQueueMonitor"  (
+@C:\Windows\Microsoft.NET\Framework\v4.0.30319\InstallUtil.exe -i /ServiceName=%APPNAME%%WindowsServicesSuffix% /StartupType=Automatic STMQueueMonitor.exe
+) ELSE  (
+@C:\Windows\Microsoft.NET\Framework\v4.0.30319\InstallUtil.exe -i /ServiceName=%APPNAME%%WindowsServicesSuffix% /StartupType=Automatic %APPNAME%.exe
+)
+ 
+
+GOTO :END
+
+:DELETE
+ECHO.
+ECHO ">>> Deleting:%APPNAME%%WindowsServicesSuffix%"
+sc stop %APPNAME%%WindowsServicesSuffix%
+
+@c:
+@cd\
+@cd C:\WindowsServices\%WindowsServicesFolder%
+
+@cd %APPNAME%
+IF "%APPNAME%"=="XosSTMQueueMonitor"  (
+@C:\Windows\Microsoft.NET\Framework\v4.0.30319\InstallUtil.exe -U /ServiceName=%APPNAME%%WindowsServicesSuffix% /StartupType=Automatic STMQueueMonitor.exe
+) ELSE (
+@C:\Windows\Microsoft.NET\Framework\v4.0.30319\InstallUtil.exe -U /ServiceName=%APPNAME%%WindowsServicesSuffix% /StartupType=Automatic %APPNAME%.exe
+)
+ 
+sc delete %APPNAME%%WindowsServicesSuffix%
+if exist "%DESTINATIONFULLPATH%" rmdir "%DESTINATIONFULLPATH%" /Q  /S
+GOTO :END
+
+:START
+ECHO.
+ECHO ">>> Starting:%APPNAME%%WindowsServicesSuffix%"
+
+sc start %APPNAME%%WindowsServicesSuffix%
+GOTO :END
+
+:STOP
+ECHO.
+ECHO ">>> Stopping: %APPNAME%%WindowsServicesSuffix%"
+sc stop %APPNAME%%WindowsServicesSuffix%
+GOTO :END
+:END
+ECHO.
+ECHO.
+SET CURRENTDIR=%~dp0
+SET TEMPDEPLOYDIR=%CURRENTDIR%TEMPDEPLOY\ConfigFiles
+CD %CURRENTDIR%
+CALL 0_Config.cmd
+ 
+fart.exe -r -c -- %TEMPDEPLOYDIR%\*.config ^^^^OPTIONAL_SERVICE_PREFIX^^^^ %OPTIONAL_SERVICE_PREFIX%
+fart.exe -r -c -- %TEMPDEPLOYDIR%\*.config ^^^^LOG_FILE_PATH^^^^ %LOG_FILE_PATH%
+fart.exe -r -c -- %TEMPDEPLOYDIR%\*.config ^^^^XOSLOG_SMTP_SERVER^^^^ %XOSLOG_SMTP_SERVER%
+fart.exe -r -c -- %TEMPDEPLOYDIR%\*.config ^^^^XOSLOG_TO_EMAIL^^^^ %XOSLOG_TO_EMAIL%
+fart.exe -r -c -- %TEMPDEPLOYDIR%\*.config ^^^^XOSLOG_FROM_EMAIL^^^^ %XOSLOG_FROM_EMAIL%
+fart.exe -r -c -- %TEMPDEPLOYDIR%\*.config ^^^^DEFAULT_EMAIL_TO^^^^ %DEFAULT_EMAIL_TO%
+fart.exe -r -c -- %TEMPDEPLOYDIR%\*.config ^^^^DEFAULT_EMAIL_FROM^^^^ %DEFAULT_EMAIL_FROM%
+fart.exe -r -c -- %TEMPDEPLOYDIR%\*.config ^^^^PATH_TO_UISERVICE^^^^ %PATH_TO_UISERVICE%
+SET PATH=%PATH%;%systemroot%\system32\;%systemroot%\system32\inetsrv\;C:\Program Files\7-Zip;c:\WINDOWS\Microsoft.NET\Framework\v4.0.30319\;
+SET CURRENTDIR=%~dp0
+SET TEMPDEPLOYDIR=%CURRENTDIR%TEMPDEPLOY
+if exist %TEMPDEPLOYDIR% rmdir %TEMPDEPLOYDIR% /S 
+REM /Q
+mkdir %TEMPDEPLOYDIR%\ConfigFiles
+mkdir %TEMPDEPLOYDIR%\Code
+CD %CURRENTDIR%
+xcopy ..\ConfigFiles %TEMPDEPLOYDIR%\ConfigFiles /E
+xcopy ..\Code %TEMPDEPLOYDIR%\Code /E
+ECHO *******************************************
+ECHO Special Fixes
+ECHO *******************************************
+CALL %CURRENTDIR%FixStmQueueMonitor.bat
+pause
+SET PATH=%PATH%;%systemroot%\system32\;%systemroot%\system32\inetsrv\
+
+@echo off
+cd %~dp0
+CALL 0_Config.cmd
+CALL "1 CopyFiles.bat"
+CALL "2 UpdateConfigs.bat"
+ 
+ 
+ECHO *******************************************
+ECHO.
+ECHO **     master script     **
+ECHO.
+ECHO *******************************************
+ECHO.
+ECHO.
+ECHO.
+:ConfigureMainWeb
+SET /P rundbscript="Do you want to add,delete,update creditpath main web or you want to do nothing? (ADD/DELETE/UPDATE/NOTHING)"
+if %rundbscript%==ADD goto AddMainWeb
+if %rundbscript%==DELETE goto DeleteMainWeb
+if %rundbscript%==UPDATE goto UpdateMainWeb
+If %rundbscript%==NOTHING goto ConfigureWebService
+goto end
+:DeleteMainWeb
+SET "DESTINATIONROOTPATH==C:\WebSites\%VIRTUALDIRECTORYFOLDER%\"
+SET "APPPOOLNAME=%VIRTUALDIRECTORYFOLDER%"
+
+ECHO DELETE Website: %APPNAME%
+CALL %CURRENTDIR%\AdminIISWebApp DELETEWEBSITE %VIRTUALDIRECTORYFOLDER% %APPNAME% %SOURCEPATH% %SOURCECONFIGPATH% %DESTINATIONROOTPATH% %APPPOOLNAME% %PREFIX% %POSTFIX%
+ECHO DELETE Application Pool: %APPPOOLNAME%
+CALL %CURRENTDIR%\AdminIISWebApp DELETEAPPPOOL %VIRTUALDIRECTORYFOLDER% %APPNAME% %SOURCEPATH% %SOURCECONFIGPATH% %DESTINATIONROOTPATH% %APPPOOLNAME% %PREFIX% %POSTFIX%
+
+goto ConfigureWebService
+:AddMainWeb
+SET "DESTINATIONROOTPATH==C:\WebSites\%VIRTUALDIRECTORYFOLDER%\"
+SET "APPPOOLNAME=%VIRTUALDIRECTORYFOLDER%"
+
+ECHO ADD BINDING FOR PORT443
+appcmd set site /site.name:"Default Web Site" /+bindings.[protocol='https',bindingInformation='*:443:']
+ECHO ENABLE DIRECTORY BROWSING
+appcmd set config "Default Web Site" /section:directoryBrowse /enabled:true
+ 
+ECHO Create Application Pool: %APPPOOLNAME%
+CALL %CURRENTDIR%\AdminIISWebApp ADDAPPPOOL %VIRTUALDIRECTORYFOLDER% %APPNAME% %SOURCEPATH% %SOURCECONFIGPATH% %DESTINATIONROOTPATH% %APPPOOLNAME% %PREFIX% %POSTFIX%
+ECHO Create Website: %APPNAME%
+CALL %CURRENTDIR%\AdminIISWebApp ADDWEBSITE %VIRTUALDIRECTORYFOLDER% %APPNAME% %SOURCEPATH% %SOURCECONFIGPATH% %DESTINATIONROOTPATH% %APPPOOLNAME% %PREFIX% %POSTFIX%
+goto ConfigureWebService
+:UpdateMainWeb
+SET /P OldVIRTUALDIRECTORY="Which virtual directory of creditPath you want to update?"
+goto checkcondition
+:checkcondition
+IF EXIST C:\Websites\%OldVIRTUALDIRECTORY%\ goto DeleteOldWebSite
+ECHO  %OldVIRTUALDIRECTORY% doesn't exist,please check your spelling of virtual directory and re-select your option
+goto ConfigureMainWeb
+
+:DeleteOldWebsite
+SET "DESTINATIONROOTPATH==C:\WebSites\%OldVIRTUALDIRECTORY%\"
+SET "APPPOOLNAME==%OldVIRTUALDIRECTORY%"
+
+ECHO DELETE Website: %APPNAME%
+CALL %CURRENTDIR%\AdminIISWebApp DELETEWEBSITE %OldVIRTUALDIRECTORY% %APPNAME% %SOURCEPATH% %SOURCECONFIGPATH% %DESTINATIONROOTPATH% %APPPOOLNAME% %PREFIX% %POSTFIX%
+TIMEOUT 20
+ECHO DELETE Application Pool: %APPPOOLNAME%
+CALL %CURRENTDIR%\AdminIISWebApp DELETEAPPPOOL %OldVIRTUALDIRECTORY% %APPNAME% %SOURCEPATH% %SOURCECONFIGPATH% %DESTINATIONROOTPATH% %APPPOOLNAME% %PREFIX% %POSTFIX%
+TIMEOUT 20
+
+goto AddNewWeb
+ 
+:AddNewWeb
+SET "DESTINATIONROOTPATH==C:\WebSites\%VIRTUALDIRECTORYFOLDER%\"
+SET "APPPOOLNAME=%VIRTUALDIRECTORYFOLDER%"
+ECHO ADD BINDING FOR PORT443
+appcmd set site /site.name:"Default Web Site" /+bindings.[protocol='https',bindingInformation='*:443:']
+ECHO ENABLE DIRECTORY BROWSING
+appcmd set config "Default Web Site" /section:directoryBrowse /enabled:true
+ECHO Create Application Pool: %APPPOOLNAME%
+CALL %CURRENTDIR%\AdminIISWebApp ADDAPPPOOL %VIRTUALDIRECTORYFOLDER% %APPNAME% %SOURCEPATH% %SOURCECONFIGPATH% %DESTINATIONROOTPATH% %APPPOOLNAME% %PREFIX% %POSTFIX%
+ECHO Create Website: %APPNAME%
+CALL %CURRENTDIR%\AdminIISWebApp ADDWEBSITE %VIRTUALDIRECTORYFOLDER% %APPNAME% %SOURCEPATH% %SOURCECONFIGPATH% %DESTINATIONROOTPATH% %APPPOOLNAME% %PREFIX% %POSTFIX%
+goto ConfigureWebService
+ 
+ 
+ 
+ 
+
+:ConfigureWebService
+SET /P rundbscript="Do you want to add,delete web services or you want to do nothing? (ADD/DELETE/NOTHING)"
+if %rundbscript%==ADD goto AddWebServices
+if %rundbscript%==DELETE goto DeleteWebServices
+If %rundbscript%==NOTHING goto ConfigureWindowsService
+goto end
+:AddWebServices
+SET "DESTINATIONROOTPATH=C:\WebServices\%VIRTUALDIRECTORYFOLDER%\" 
+SET "APPPOOLNAME=%VIRTUALDIRECTORYFOLDER%WS"
+ 
+ECHO ADD BINDING FOR PORT443
+appcmd set site /site.name:"Default Web Site" /+bindings.[protocol='https',bindingInformation='*:443:']
+ECHO ENABLE DIRECTORY BROWSING
+appcmd set config "Default Web Site" /section:directoryBrowse /enabled:true
+ 
+   
+ECHO Create Application Pool: %APPPOOLNAME%
+CALL %CURRENTDIR%\AdminIISWebApp ADDAPPPOOL "" "" %SOURCEPATH% %SOURCECONFIGPATH% %DESTINATIONROOTPATH% %APPPOOLNAME% %PREFIX% %POSTFIX%
+for %%a in (%listForWS%) do (
+ ECHO Create Web Service: %%a
+ CALL %CURRENTDIR%\AdminIISWebApp ADDWEBSITE %VIRTUALDIRECTORYPREFIX%%%a %%a %SOURCEPATH% %SOURCECONFIGPATH% %DESTINATIONROOTPATH% %APPPOOLNAME% %PREFIX% %POSTFIX%
+                )
+goto ConfigureWindowsService
+
+:DeleteWebServices
+SET "DESTINATIONROOTPATH=C:\WebServices\%VIRTUALDIRECTORYFOLDER%\" 
+SET "APPPOOLNAME=%VIRTUALDIRECTORYFOLDER%WS"
+   
+for %%a in (%listForWS%) do (
+ ECHO Delete Web Service: %%a
+CALL %CURRENTDIR%\AdminIISWebApp DELETEWEBSITE %VIRTUALDIRECTORYPREFIX%%%a %%a %SOURCEPATH% %SOURCECONFIGPATH% %DESTINATIONROOTPATH% %APPPOOLNAME% %PREFIX% %POSTFIX%
+   )
+ ECHO Delete Application Pool: %APPPOOLNAME%
+CALL %CURRENTDIR%\AdminIISWebApp DELETEAPPPOOL "" "" %SOURCEPATH% %SOURCECONFIGPATH% %DESTINATIONROOTPATH% %APPPOOLNAME% %PREFIX% %POSTFIX%
+goto ConfigureWindowsService
+:ConfigureWindowsService
+SET /P rundbscript="Do you want to add,delete windows services or you want to do nothing? (ADD/DELETE/NOTHING)"
+if %rundbscript%==ADD goto AddWindowsServices
+if %rundbscript%==DELETE goto DeleteWindowsServices
+If %rundbscript%==NOTHING goto end
+goto end
+:AddWindowsServices
+SET "DESTINATIONROOTPATH=C:\WindowsServices\%VIRTUALDIRECTORYFOLDER%\" 
+for %%a in (%listForwindowService%) do (
+CALL %CURRENTDIR%\AdminWindowService ADD %%a %SOURCEPATH% %DESTINATIONROOTPATH% %%a %WindowsServicesSuffix% %VIRTUALDIRECTORYFOLDER%
+CALL %CURRENTDIR%\AdminWindowService START %%a %SOURCEPATH% %DESTINATIONROOTPATH% %%a %WindowsServicesSuffix% %VIRTUALDIRECTORYFOLDER% 
+)
+goto end
+:DeleteWindowsServices
+SET "DESTINATIONROOTPATH=C:\WindowsServices\%VIRTUALDIRECTORYFOLDER%\" 
+for %%a in (%listForwindowService%) do (
+CALL %CURRENTDIR%\AdminWindowService STOP %%a %SOURCEPATH% %DESTINATIONROOTPATH% %%a %WindowsServicesSuffix% %VIRTUALDIRECTORYFOLDER%
+CALL %CURRENTDIR%\AdminWindowService DELETE %%a %SOURCEPATH% %DESTINATIONROOTPATH% %%a %WindowsServicesSuffix% %VIRTUALDIRECTORYFOLDER%
+ 
+)
+goto end
+ 
+:end
+Echo done
+ 
+pAUSE
+SET CURRENTDIR=%~dp0
+
+@Echo Off
+CD %CURRENTDIR%
+CALL "1_Config.cmd"
+CALL "2 Update.bat"
+:start
+SET /P rundbscript="Do you use windows authentication or SQL server authentication to login in the SQL server? (windows/sqlserver)"
+If %rundbscript%==windows   goto windowslogin
+If %rundbscript%==sqlserver goto sqlserverlogin
+goto tryagain
+
+:windowslogin
+
+sqlcmd -S %SERVER_NAME% -i BackUpScript.sql
+goto end
+
+:sqlserverlogin
+
+sqlcmd -S %SERVER_NAME% -U %SQLUSERNAME% -P %SQLUSERPASSWORD% -i BackUpScript.sql
+goto end
+
+:tryagain
+ECHO "please specicify which authenticaiton method you use for login into the server, it has to be either "windows" or "sqlserver""
+goto start
+
+:end
+Echo done
+ 
+pAUSE
+
+ 
